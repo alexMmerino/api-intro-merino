@@ -1,15 +1,22 @@
 from datetime import date
 import json
+from json.decoder import JSONDecodeError
 
 import requests
 
 # Get configuration data from config.json
 try:
-    with open("config.json", "r") as config_file:
+    with open('config.json', 'r') as config_file:
         config_data = json.load(config_file)
         config_file.close()
 except FileNotFoundError:
-    raise Exception('Config.json file is missing.')
+    raise Exception('FileNotFoundError when trying to open config.json')
+except PermissionError:
+    raise Exception('PermissionError when trying to open config.json')
+except OSError:
+    raise Exception('OSError when trying to open config.json')
+except Exception as e:
+    raise Exception(f'Unhandled exception: {e}')
 
 # load configuration constants
 try:
@@ -18,8 +25,12 @@ try:
     SN_CLIENT_ID = config_data['SN_CLIENT_ID']
     SN_CLIENT_SECRET = config_data['SN_CLIENT_SECRET']
     BASE_URL = config_data['BASE_URL']
-except KeyError:
-    raise Exception('Config file is missing configuration.')
+except KeyError as e:
+    raise Exception(f'Config file is missing configuration: {e}')
+except JSONDecodeError as e:
+    raise Exception(f'JSON Decoder Error : {e}')
+except Exception as e:
+    raise Exception(f'Unhandled exception: {e}')
 
 
 # API urls
