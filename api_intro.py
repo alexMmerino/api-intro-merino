@@ -1,18 +1,25 @@
 from datetime import date
+
 import requests
 
 import config
 
 # Client IDs and Secrets from config.py
-ob_client_id = config.OB_CLIENT_ID
-ob_client_Secret = config.OB_CLIENT_SECRET
-sn_client_id = config.SN_CLIENT_ID
-sn_client_Secret = config.SN_CLIENT_SECRET
+try:
+    OB_CLIENT_ID = config.OB_CLIENT_ID
+    OB_CLIENT_SECRET = config.OB_CLIENT_SECRET
+    SN_CLIENT_ID = config.SN_CLIENT_ID
+    SN_CLIENT_SECRET = config.SN_CLIENT_SECRET
+    BASE_URL = config.BASE_URL
+except AttributeError:
+    raise Exception('Config file is missing configuration.')
 
-# API base urls
-svcnowUrl = "https://oregonstateuniversity-test.apigee.net/v1/servicenow/colleges"
-onbaseUrl = "https://oregonstateuniversity-test.apigee.net/v2/onbase-docs/documents"
-authUrl = "https://oregonstateuniversity-test.apigee.net/oauth2/token"
+
+# API urls
+svcnow_url = BASE_URL + 'v1/servicenow/colleges'
+onbase_url = BASE_URL + 'v2/onbase-docs/documents'
+auth_url = BASE_URL + 'oauth2/token'
+
 
 def get_access_token(key, secret):
     """
@@ -21,75 +28,63 @@ def get_access_token(key, secret):
     :param secret: applicationclient secret
     :returns: access token string
     """
-    data = {"client_id": key, "client_secret": secret, "grant_type": "client_credentials"}
-    request = requests.post(authUrl, data=data)
+    data = {'client_id': key, 'client_secret': secret,
+            'grant_type': 'client_credentials'}
+    request = requests.post(auth_url, data=data)
     response = request.json()
+    if 'access_token' in response:
+        return response['access_token']
+    else:
+        raise Exception('Unable to generate access token.')
 
-    return response["access_token"]
 
-def get_svcnow_colleges(access_token):
+def get_api_response(access_token, url):
     """
-    Retrives Banner college data from ServiceNow API
+    Retrives data from OSU API
     :param access_token: OSU API access token
-    :returns: json college data
+    :param url: OSU API endpoint url
+    :returns: json data
     """
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer " + access_token}
-    request = requests.get(svcnowUrl, headers=headers)
+    headers = {'Content-Type': 'application/json',
+               'Authorization': f'Bearer {access_token}'}
+    request = requests.get(url, headers=headers)
     response = request.json()
-    return response["data"]
+    if 'data' in response:
+        return response['data']
+    else:
+        raise Exception(f'Error occured retreiving data from {url}')
 
-def get_onbase_documents(access_token):
-    """
-    Retrives Onbase documents from Onbase Documents API
-    :param access_token: OSU API access token
-    :returns: json ADMS Deny Document data
-    """
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer " + access_token}
-    endDate = date.today()
-    urlFilter = "?filter[documentTypeName]=ADMS Deny&filter[endDate]=" + str(endDate)
-    request = requests.get(onbaseUrl + urlFilter, headers=headers)
-    response = request.json()
-    return response["data"]
 
-def get_onbase_keywords(access_token, id):
-    """
-    Retrives keywords for a document from Onbase Documents API
-    :param access_token: OSU API access token
-    :param id: document ID
-    :returns: json document keyword data
-    """
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer " + access_token}
-    docUrl = "/" + str(id) + "/keywords"
-    request = requests.get(onbaseUrl + docUrl, headers=headers)
-    response = request.json()
-    return response["data"]["attributes"]["keywords"]
-
-if __name__ == "__main__":
-    ob_access_token = get_access_token(ob_client_id, ob_client_Secret)
-    sn_access_token = get_access_token(sn_client_id, sn_client_Secret)
+if __name__ == '__main__':
+    ob_access_token = get_access_token(OB_CLIENT_ID, OB_CLIENT_SECRET)
+    sn_access_token = get_access_token(SN_CLIENT_ID, SN_CLIENT_SECRET)
 
     # API Call 1: Service Now API Retrieve Top 5 College Data
-    print("API Call 1: Service Now API Retrieve College Data")
-    collegeData = get_svcnow_colleges(sn_access_token)
-    count = 1
-    for college in collegeData:
-        print(str(count) + "- College Code: " + college["attributes"]["code"] + ", College Name: " + college["attributes"]["description"])
-        count += 1
-        if count > 5:
-            break
-    
+    print('API Call 1: Service Now API Retrieve College Data')
+    college_data = get_api_response(sn_access_token, svcnow_url)
+    for college in college_data[:5]:
+        print(f"- College Code: {college['attributes']['code']}" +
+              f", College Name: {college['attributes']['description']}")
+
     # API Call 2: Get Onbase Documents
-    print("API Call 2: Retrieve Onbase Documents")
-    documentData = get_onbase_documents(ob_access_token)
-    count = 1
-    for document in documentData:
-        print(str(count) + "- Doc ID: " + document["id"] + ", Doc Name: " + document["attributes"]["name"] + ", Created Date: " + document["attributes"]["storedDate"])
-        keywords = get_onbase_keywords(ob_access_token, document["id"])
+    print('API Call 2: Retrieve Onbase Documents')
+    end_date = str(date.today())
+    url_filter = (f'?filter[documentTypeName]=ADMS Deny&filter[endDate]=' +
+                  f'{end_date}')
+    document_data = get_api_response(ob_access_token, onbase_url + url_filter)
+    for document in document_data[:5]:
+        print(f"- Doc ID: {document['id']}, Doc Name: " +
+              f"{document['attributes']['name']}, Created Date: " +
+              f"{document['attributes']['storedDate']}")
+        doc_url = f"/{document['id']}/keywords"
+
+        # API Call 3: Get Onbase Document Keywords
+        keyword_data = get_api_response(ob_access_token, onbase_url + doc_url)
+        keywords = keyword_data['attributes']['keywords']
         for keyword in keywords:
-            if keyword["name"] == 'ADMS - Application Term':
-                print("-- Application Term: " + keyword["values"][0]["formattedValue"])
-            if keyword["name"] == 'ADMS - App Number':
-                print("-- Application Number: " + str(keyword["values"][0]["formattedValue"]))
-        count += 1
-        if count > 5:
-            break
+            if keyword['name'] == 'ADMS - Application Term':
+                print('-- Application Term: ' +
+                      f"{keyword['values'][0]['formattedValue']}")
+            if keyword['name'] == 'ADMS - App Number':
+                print('-- Application Number: ' +
+                      f"{keyword['values'][0]['formattedValue']}")
